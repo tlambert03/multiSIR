@@ -1,5 +1,95 @@
 #!/bin/bash
 
+# default values
+BACKGROUND=50
+WIENER=0.0010
+OUTPUT_TAG=""
+
+while getopts ":i:o:p:w:b:t:a:" flag; do
+    case "${flag}" in
+        i) INPUT_FILE=${OPTARG};;
+        o) OTF=${OPTARG};;
+        p) OUTPUT_FILE=${OPTARG};;
+    	b) BACKGROUND=${OPTARG};;
+    	w) WIENER=${OPTARG};;
+    	t) OUTPUT_TAG=${OPTARG};;
+    	a) ARGS=${OPTARG};;
+    	\?) echo "invalid option specified";;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ -z "$INPUT_FILE" ];
+then
+    echo "The input data file must be specified with the -i flag"; exit 1;
+fi
+
+if [ -z "$OUTPUT_FILE" ];
+then
+    echo "The output file must be specified with the -p flag"; exit 1;
+fi
+
+if [ -z "$OTF" ];
+then
+    echo "The OTF file must be specified with the -o flag"; exit 1;
+fi
+
+if [ $( echo "$WIENER>1" | bc ) -eq 1 ] || [ $( echo "$WIENER>1" | bc ) -eq 1 ];
+then
+    echo "The wiener filter flag (-w) must be between 0 and 1"; exit 1;
+fi
+
+if [ $( echo "$BACKGROUND>32766" | bc ) -eq 1 ];
+then
+    echo "The background filter flag (-b) must be less than 32766"; exit 1;
+fi
+
+#computed varibles
+DATA_DIR=${INPUT_FILE%/*}
+BASE_FILE=${INPUT_FILE##*/}
+OTF_NAME=${OTF##*/}
+OTF_DATE=$(date -r $OTF +%y%m%d)
+
+
+
+# softWoRx Task Command File
+export OMP_NUM_THREADS=4
+export STATUS_FILE="${DATA_DIR}/${BASE_FILE%.dv}_${OUTPUT_TAG}${OTF_KEY}_status.txt"
+export HOME=/home/worx
+export LOGNAME=worx
+export SW_BASE=/usr/local/softWoRx
+export DV_BASE=/usr/local/softWoRx
+export LD_LIBRARY_PATH=/usr/local/softWoRx/lib/i386
+
+
+echo ---- Starting SI Reconstruction Task at `date`
+echo "- input data: ${BASE_FILE}"
+echo "- OTF: ${OTF_NAME} (key:${OTF_KEY})"
+echo "- Wiener: $WIENER;  Background: $BACKGROUND"
+
+/usr/local/softWoRx/bin/i386/XYenhance3D.fftw \
+  $INPUT_FILE \
+  $OUTPUT_FILE \
+  $OTF \
+  -channel_k0 528 -0.804300 -1.855500 0.238800 \
+  -channel_ex_linespacing 488 0.207500 \
+  -status_file $STATUS_FILE \
+  -triangleapo -background $BACKGROUND \
+  -wiener $WIENER  -linespacing 0.20800 -basek0guesses -0.796300 -1.843300 0.249300\
+  $ARGS \
+  &>"${DATA_DIR}/${BASE_FILE%.dv}_${OUTPUT_TAG}${OTF_KEY}_SIR_log.txt"
+
+# Check exit status
+if [ "$?" != "0" ]; then
+exit 1
+fi
+
+
+echo ---- Finished Task at `date`
+echo -en '\n'
+
+
+
 #Usage:
 #XYenhance3D [[input file] [output file] [OTF file]] [Options]
 #
@@ -39,96 +129,3 @@
 #        -help or -h -- print this message
 
 
-# default values
-BACKGROUND=50
-WIENER=0.001000
-OUTPUT_TAG=""
-
-
-while getopts ":i:o:w:b:t:a:" flag; do
-    case "${flag}" in
-        i) RAW_DATA=${OPTARG};;
-        o) OTF=${OPTARG};;
-	b) BACKGROUND=${OPTARG};;
-	w) WIENER=${OPTARG};;
-	t) OUTPUT_TAG=${OPTARG};;
-	a) ARGS=${OPTARG};;
-	\?) echo "invalid option specified";;
-    esac
-done
-shift $((OPTIND-1))
-
-if [ -z "$RAW_DATA" ];
-then
-    echo "The input data file must be specified with the -i flag"; exit 1;
-fi
-
-if [ -z "$OTF" ];
-then
-    echo "The OTF file must be specified with the -o flag"; exit 1;
-fi
-
-if [ $( echo "$WIENER>1" | bc ) -eq 1 ] || [ $( echo "$WIENER>1" | bc ) -eq 1 ];
-then
-    echo "The wiener filter flag (-w) must be between 0 and 1"; exit 1;
-fi
-
-if [ $( echo "$BACKGROUND>32766" | bc ) -eq 1 ];
-then
-    echo "The background filter flag (-b) must be less than 32766"; exit 1;
-fi
-
-#computed varibles
-DATA_DIR=${RAW_DATA%/*}
-BASE_FILE=${RAW_DATA##*/}
-OTF_NAME=${OTF##*/}
-OTF_DATE=$(date -r $OTF +%y%m%d)
-
-OIFS=$IFS;
-IFS="_";
-keyArray=(${OTF_NAME%.otf});
-OTF_WAVE=${keyArray[0]};
-OTF_OIL=${keyArray[2]};
-OTF_MEDIUM=${keyArray[3]};
-OTF_ANGLE=${keyArray[4]};
-OTF_BEAD=${keyArray[5]};
-IFS=$OIFS;
-OTF_KEY="d${OTF_DATE}o${OTF_OIL: -2}${OTF_ANGLE}b${OTF_BEAD: -2}"
-
-OUTPUT_FILE="${DATA_DIR}/${BASE_FILE%.dv}_${OUTPUT_TAG}${OTF_KEY}_SIR.dv"
-
-# softWoRx Task Command File
-export OMP_NUM_THREADS=4
-export STATUS_FILE="${DATA_DIR}/${BASE_FILE%.dv}_${OUTPUT_TAG}${OTF_KEY}_status.txt"
-export HOME=/home/worx
-export LOGNAME=worx
-export SW_BASE=/usr/local/softWoRx
-export DV_BASE=/usr/local/softWoRx
-export LD_LIBRARY_PATH=/usr/local/softWoRx/lib/i386
-
-
-echo ---- Starting SI Reconstruction Task at `date`
-echo "- raw data: ${BASE_FILE}"
-echo "- OTF: ${OTF_NAME} (key:${OTF_KEY})"
-echo "- Wiener: $WIENER;  Background: $BACKGROUND"
-
-/usr/local/softWoRx/bin/i386/XYenhance3D.fftw \
-  $RAW_DATA \
-  $OUTPUT_FILE \
-  $OTF \
-  -channel_k0 528 -0.804300 -1.855500 0.238800 \
-  -channel_ex_linespacing 488 0.207500 \
-  -status_file $STATUS_FILE \
-  -triangleapo -background $BACKGROUND \
-  -wiener $WIENER  -linespacing 0.20800 -basek0guesses -0.796300 -1.843300 0.249300\
-  $ARGS \
-  &>"${DATA_DIR}/${BASE_FILE%.dv}_${OUTPUT_TAG}${OTF_KEY}_SIR_log.txt"
-
-# Check exit status
-if [ "$?" != "0" ]; then
-exit 1
-fi
-
-
-echo ---- Finished Task at `date`
-echo -en '\n'
