@@ -1,18 +1,36 @@
 #!/bin/bash
 
-# default values
-BACKGROUND=50
-WIENER=0.0010
-OUTPUT_TAG=""
 
-while getopts ":i:o:p:w:b:t:a:" flag; do
+function OTFkey() {
+    #generate OTF key
+    OTF=$1
+    OTF_NAME=${OTF##*/}
+    OIFS=$IFS;
+    IFS="_";
+    keyArray=(${OTF_NAME%.otf});
+    OTF_WAVE=${keyArray[0]};
+    OTF_DATE=${keyArray[1]};
+    OTF_OIL=${keyArray[2]};
+    OTF_MEDIUM=${keyArray[3]};
+    OTF_ANGLE=${keyArray[4]};
+    OTF_BEAD=${keyArray[5]};
+    IFS=$OIFS;
+    OTF_KEY="w${OTF_WAVE}d${OTF_DATE}o${OTF_OIL: -2}${OTF_ANGLE}b${OTF_BEAD: -2}"
+    echo $OTF_KEY
+}
+
+
+# default values
+BACKGROUND=80
+WIENER=0.0010
+
+while getopts ":i:o:p:w:b:a:" flag; do
     case "${flag}" in
         i) INPUT_FILE=${OPTARG};;
         o) OTF=${OPTARG};;
         p) OUTPUT_FILE=${OPTARG};;
     	b) BACKGROUND=${OPTARG};;
     	w) WIENER=${OPTARG};;
-    	t) OUTPUT_TAG=${OPTARG};;
     	a) ARGS=${OPTARG};;
     	\?) echo "invalid option specified";;
     esac
@@ -24,15 +42,21 @@ then
     echo "The input data file must be specified with the -i flag"; exit 1;
 fi
 
-if [ -z "$OUTPUT_FILE" ];
-then
-    echo "The output file must be specified with the -p flag"; exit 1;
-fi
 
 if [ -z "$OTF" ];
 then
     echo "The OTF file must be specified with the -o flag"; exit 1;
 fi
+
+if [ -z "$OUTPUT_FILE" ];
+then
+	DD=${INPUT_FILE%/*}
+	BF=${INPUT_FILE##*/}
+	FN=${BF%.*}
+	otfk=$(OTFkey $OTF)
+	OUTPUT_FILE="${DD}/${FN}_${otfk}_SIR.dv"
+fi
+
 
 if [ $( echo "$WIENER>1" | bc ) -eq 1 ] || [ $( echo "$WIENER>1" | bc ) -eq 1 ];
 then
@@ -48,13 +72,12 @@ fi
 DATA_DIR=${INPUT_FILE%/*}
 BASE_FILE=${INPUT_FILE##*/}
 OTF_NAME=${OTF##*/}
-OTF_DATE=$(date -r $OTF +%y%m%d)
-
+OTF_KEY=$(OTFkey $OTF)
 
 
 # softWoRx Task Command File
-export OMP_NUM_THREADS=4
-export STATUS_FILE="${DATA_DIR}/${BASE_FILE%.dv}_${OUTPUT_TAG}${OTF_KEY}_status.txt"
+export OMP_NUM_THREADS=8
+export STATUS_FILE="${DATA_DIR}/${BASE_FILE%.dv}_${OTF_KEY}_status.txt"
 export HOME=/home/worx
 export LOGNAME=worx
 export SW_BASE=/usr/local/softWoRx
@@ -62,31 +85,28 @@ export DV_BASE=/usr/local/softWoRx
 export LD_LIBRARY_PATH=/usr/local/softWoRx/lib/i386
 
 
-echo ---- Starting SI Reconstruction Task at `date`
-echo "- input data: ${BASE_FILE}"
-echo "- OTF: ${OTF_NAME} (key:${OTF_KEY})"
-echo "- Wiener: $WIENER;  Background: $BACKGROUND"
-
 /usr/local/softWoRx/bin/i386/XYenhance3D.fftw \
   $INPUT_FILE \
   $OUTPUT_FILE \
   $OTF \
+  -channel_k0 435 -0.831000 -1.884600 0.213000 \
   -channel_k0 528 -0.804300 -1.855500 0.238800 \
-  -channel_ex_linespacing 488 0.207500 \
+  -channel_k0 608 -0.775600 -1.826500 0.270100 \
+  -channel_k0 683 -0.768500 -1.823400 0.276100 \
+  -channel_ex_linespacing 405 0.1920 \
+  -channel_ex_linespacing 488 0.2075 \
+  -channel_ex_linespacing 568 0.2290 \
+  -channel_ex_linespacing 642 0.2400 \
   -status_file $STATUS_FILE \
-  -triangleapo -background $BACKGROUND \
+  -background $BACKGROUND \
   -wiener $WIENER  -linespacing 0.20800 -basek0guesses -0.796300 -1.843300 0.249300\
   $ARGS \
-  &>"${DATA_DIR}/${BASE_FILE%.dv}_${OUTPUT_TAG}${OTF_KEY}_SIR_log.txt"
+  &>"${DATA_DIR}/${BASE_FILE%.dv}_${OTF_KEY}_SIR_log.txt"
 
 # Check exit status
 if [ "$?" != "0" ]; then
 exit 1
 fi
-
-
-echo ---- Finished Task at `date`
-echo -en '\n'
 
 
 
@@ -128,4 +148,15 @@ echo -en '\n'
 #        -status_file file -- status file for controlling program to watch
 #        -help or -h -- print this message
 
-
+#  -channel_k0 435 -0.831000 -1.884600 0.213000 \
+#  -channel_k0 528 -0.804300 -1.855500 0.238800 \
+#  -channel_k0 608 -0.775600 -1.826500 0.270100 \
+#  -channel_k0 683 -0.768500 -1.823400 0.276100 \
+#  -channel_k0 477 -0.803400 -1.856900 0.238900 \ 
+#  -channel_k0 541 -0.798300 -1.849100 0.244700 \
+#  -channel_ex_linespacing 405 0.1920 \
+#  -channel_ex_linespacing 445 0.2035 \
+#  -channel_ex_linespacing 488 0.2075 \
+#  -channel_ex_linespacing 514 0.2200 \
+#  -channel_ex_linespacing 568 0.2290 \ 
+#  -channel_ex_linespacing 642 0.2400 \

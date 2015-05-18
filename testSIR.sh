@@ -1,7 +1,7 @@
  #!/bin/bash
 
-prii
-OTF_DIR='/Users/talley/Dropbox/omx/data/testSIR/correctedOTFs'
+source /usr/local/omx/priism/Priism_setup.sh
+OTF_DIR='/data1/OTFs/CORRECTED'
 
 function OTFkey() {
     #generate OTF key
@@ -35,43 +35,35 @@ function OTFdecode() {
 
 
 function multiSIR() {
-    ARG=$1
-    COL=$2
+	ARG=$1
+	COL=$2
 
-    #check if directory
-    if [ -d "$ARG" ]; then
-        #loop over data directory
-        for f in $ARG
-        do
-            multiSIR $f
-        done
+	B=${ARG##*/}
+	FNAME=${B%.*}
+
+
+       # get wavelength of file)
 
     #if dv file, reconstruct multi
-    elif [ -e "$ARG" ]; then
-        if [[ $ARG != *"SIR"* ]] && [[ $ARG == *.dv ]] # make sure they are not reconstructions
-        then
+    if [ -e "$ARG" ] && [[ $ARG != *"SIR"* ]] && [[ $ARG == *.dv ]]; then
 
-            DATA_DIR=${ARG%/*}
-            BASE_FILE=${ARG##*/}
-            FNAME=${BASE_FILE%.*}
+	find $OTF_DIR -mtime -$OTFAGE -name \\"$COL"* | xargs -n1 -P4 -I % ./sir.sh -i $ARG -o % -a $OPTIONS
 
-            mkdir ${DATA_DIR}/$FNAME
+#old method, without parallelization
+#	for OTF in $OTF_DIR/$COL*.otf     #ONLY corrected OTFS
+#	do
+#	
+#	OTF_KEY=$(OTFkey $OTF)
+#	
+#	OUTPUT_FILE="${OUTPUT_DIR}/${FNAME}_${OTF_KEY}_SIR.dv"
+#	echo "OTF: ${OTF} (key:${OTF_KEY})"
+#
+#	./sir.sh -i $ARG -o $OTF -p $OUTPUT_FILE -a $OPTIONS;
+#	done
 
-            # get wavelength of file)
 
-            for OTF in $OTF_DIR/$COL*.otf     #ONLY corrected OTFS
-            do
-
-                OTF_KEY=$(OTFkey $OTF)
-
-                OUTPUT_FILE="${DATA_DIR}/$FNAME/${FNAME}_${OTF_KEY}_SIR.dv"
-
-                ./sir.sh -i $ARG -o $OTF -p $OUTPUT_FILE
-            done
-
-        fi
     else
-        echo "first argument must either be a file or a directory of raw data"
+        echo "input file ${ARG} does not appear to be raw SIM data... recheck input"
     fi
 }
 
@@ -90,31 +82,41 @@ function numtimepoints() {
 
 function splitFile() {
 
-    RAW_FILE=$1
-
-    WAVES=$(waves $RAW_FILE)
+    IN=$1
+    B=${IN##*/}
+    FNAME=${B%.*}
+    WAVES=$(waves $IN)
 
     for w in $WAVES; do
-        CPY=${RAW_FILE/.dv/-$w.dv}
+	echo "copying channel ${w}..."
+        CPY=${OUTPUT_DIR}/${B/.dv/_$w.dv}
         # make a duplicate file containing just one of the wavelengths
-        CopyRegion $RAW_FILE $CPY -w=$w;
+        CopyRegion $IN $CPY -w=$w &
     done
+    wait
 
 }
 
 
-
 RAW_FILE=$1 # the grabs the input file
+OTFAGE=${2:-365}
+OPTIONS=$3
 NUMWAVES=$(numwaves $RAW_FILE)
 WAVES=$(waves $RAW_FILE)
 NUMTIMES=$(numtimepoints $RAW_FILE)
 
-echo "testing ${RAW_FILE}..."
 
+DATA_DIR=${RAW_FILE%/*}
+BASE_FILE=${RAW_FILE##*/}
+FNAME=${BASE_FILE%.*}
+OUTPUT_DIR="${DATA_DIR}/${FNAME}_TEST"
+
+mkdir $OUTPUT_DIR
 
 # test for timelapse first
 if [ $NUMTIMES -gt 1 ]; then
-    CPY=${RAW_FILE/.dv/_T1.dv}
+    echo "${NUMTIMES} timepoints... cropping to first timepoint"
+    CPY="${OUTPUT_DIR}/${FNAME}_T1.dv"
     CopyRegion $RAW_FILE $CPY -t=1:1:1;
     RAW_FILE=$CPY
 fi
@@ -127,14 +129,15 @@ if [ $NUMWAVES -gt 1 ]; then
     ###############################
 
     echo "splitting file into ${NUMWAVES} wavelengths: ${WAVES}"
-    splitfile $RAW_FILE;
+    splitFile $RAW_FILE;
 
     ###############################
     # RECONSTRUCT EACH WAVELENGTH #
     ###############################
 
     for w in $WAVES; do
-        CPY=${RAW_FILE/.dv/-$w.dv}
+        CPY=${OUTPUT_DIR}/${BASE_FILE/.dv/_$w.dv}
+	echo "reconstructing the crap out of wavelength ${w}..."
         multiSIR $CPY $w
     done
 
@@ -143,7 +146,7 @@ else
 
     # SINGLE-CHANNEL FILE #
 
-    multiSIR $RAW_FILE
+    multiSIR $RAW_FILE $WAVES
 
 fi
 
