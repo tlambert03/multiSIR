@@ -120,7 +120,8 @@ then
     echo "The channel override (-c) was not one of the available options (435,477,528,541,608,683)"; exit 1;
 fi
 
-RAW_FILE=${@:$OPTIND:1} # input file
+INPUT=${@:$OPTIND:1} # input file
+RAW_FILE=$(readlink -f $INPUT)
 OPTIONS=${@:$OPTIND+1:1} # options for reconstruction
 
 # detect input file dimensions
