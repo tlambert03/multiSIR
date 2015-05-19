@@ -182,4 +182,12 @@ else
 
 fi
 
+# pull out the mod amps from the log files
+# find . -name \*SIR_log* | xargs grep "Amplitude" | awk '{print $1,$8,$9;}'
 
+# put it into an array
+# arr=( echo $(find . -name \*w608*SIR_log* | xargs -P4 grep "Amplitude" | awk '{print $9;}') )
+
+#scores=()
+# how to append to array
+#scores+=('foo')
