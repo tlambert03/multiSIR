@@ -152,11 +152,11 @@ fi
 #  -channel_k0 528 -0.804300 -1.855500 0.238800 \
 #  -channel_k0 608 -0.775600 -1.826500 0.270100 \
 #  -channel_k0 683 -0.768500 -1.823400 0.276100 \
-#  -channel_k0 477 -0.803400 -1.856900 0.238900 \ 
+#  -channel_k0 477 -0.803400 -1.856900 0.238900 \
 #  -channel_k0 541 -0.798300 -1.849100 0.244700 \
 #  -channel_ex_linespacing 405 0.1920 \
 #  -channel_ex_linespacing 445 0.2035 \
 #  -channel_ex_linespacing 488 0.2075 \
 #  -channel_ex_linespacing 514 0.2200 \
-#  -channel_ex_linespacing 568 0.2290 \ 
+#  -channel_ex_linespacing 568 0.2290 \
 #  -channel_ex_linespacing 642 0.2400 \
