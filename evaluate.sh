@@ -9,7 +9,6 @@ function evaluate() {
 		a=$(expr $i);
 		b=$(expr $i + 1);
 		c=$(expr $i + 2);
-		$(echo ${ARR[b]/,/} | bc);
 		SUM=$(bc <<< "${ARR[a]/,/} + ${ARR[b]/,/} + ${ARR[c]/,/}");
 		AVG=$(printf %.4f $(echo "$sum/3" | bc -l ) );
 		SCORES+=($AVG);
