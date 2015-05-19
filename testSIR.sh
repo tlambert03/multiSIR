@@ -39,7 +39,7 @@ function multiSIR() {
     if [ -e "$ARG" ] && [[ $ARG != *"SIR"* ]] && [[ $ARG == *.dv ]]; then
 
         # using xargs to parallelize reconstruction to take advantage of multiple cores
-        find $OTF_DIR -mtime -$OTFAGE -name \\"$W"* | sort -n | head -$OTFNUM | xargs -n1 -P4 -I % /home/worx/scripts/sir.sh -i $ARG -o % -a $OPTIONS
+        find $OTF_DIR -mtime -$OTFAGE -name \\"$W"* | sort -n | head -$OTFNUM | xargs -n1 -P4 -I % $SIR_SCRIPT -i $ARG -o % -a $OPTIONS
 
         #local B=${ARG##*/}
         #local FNAME=${B%.*}
@@ -93,7 +93,7 @@ source /usr/local/omx/priism/Priism_setup.sh
 # directory with corrected OTFs
 OTF_DIR='/data1/OTFs/CORRECTED'
 
-SIR_SCRIPT=/home/worx/scripts/sir.sh
+SIR_SCRIPT='/home/worx/scripts/sir.sh'
 
 # default values
 OTFAGE=730 # max age of OTF: two years old
@@ -177,7 +177,8 @@ if [ $NUMWAVES -gt 1 ]; then
 else
 
     # SINGLE-CHANNEL FILE
-    multiSIR $RAW_FILE $WAVES
+    ln -s $RAW_FILE $OUTPUT_DIR/$BASENAME
+    multiSIR $OUTPUT_DIR/$BASENAME $WAVES
 
 fi
 
