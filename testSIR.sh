@@ -56,6 +56,9 @@ function multiSIR() {
         # using xargs to parallelize reconstruction to take advantage of multiple cores
         find $OTF_DIR -mtime -$OTFAGE -name \\"$W"* | sort -rn | head -$OTFNUM | xargs -n1 -P4 -I % $SIR_SCRIPT -i $ARG -o % -b $BACKGROUND -w $WIENER
 
+# use this for oil filtering
+# awk -F'_' '{ if ($3 >=1510 && $3<=$MAXOTF) print}'
+
         #local B=${ARG##*/}
         #local FNAME=${B%.*}
         #old method, without parallelization
