@@ -26,9 +26,9 @@ WIENER=0.0010
 
 while getopts ":i:o:p:w:b:a:" flag; do
     case "${flag}" in
-        i) INPUT_FILE=${OPTARG};;
-        o) OTF=${OPTARG};;
-        p) OUTPUT_FILE=${OPTARG};;
+      i) INPUT_FILE=${OPTARG};;
+      o) OTF=${OPTARG};;
+      p) OUTPUT_FILE=${OPTARG};;
     	b) BACKGROUND=${OPTARG};;
     	w) WIENER=${OPTARG};;
     	a) ARGS=${OPTARG};;

@@ -12,6 +12,7 @@ function evaluate() {
 		SUM=$(echo "${ARR[a]/,/} + ${ARR[b]/,/} + ${ARR[c]/,/}" | bc)
 		AVG=$(printf %.4f $(echo "$SUM/3" | bc -l ) )
 		SCORES+=($AVG);
+		echo $AVG
 	done
 }
 
