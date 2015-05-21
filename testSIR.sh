@@ -115,7 +115,7 @@ function show_help {
 ###### MAIN PROGRAM #######
 
 
-while getopts ":hd:n:w:c:t:v:" flag; do
+while getopts ":hd:n:w:c:t:v:b:" flag; do
 case "$flag" in
     h) show_help;;
     d) OTFAGE=$OPTARG;;
