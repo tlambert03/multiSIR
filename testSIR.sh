@@ -1,9 +1,9 @@
- #!/bin/bash
+#!/bin/bash
 
 ###### CONSTANTS #######
 
-#PRIISM_LIB='/usr/local/omx/priism/Priism_setup.sh'
-PRIISM_LIB='/Users/talley/Dropbox/NIC/software/priism-4.4.1/Priism_setup.sh'
+PRIISM_LIB='/usr/local/omx/priism/Priism_setup.sh'
+#PRIISM_LIB='/Users/talley/Dropbox/NIC/software/priism-4.4.1/Priism_setup.sh'
 OTF_DIR='/data1/OTFs/CORRECTED'
 SIR_SCRIPT='/home/worx/scripts/sir.sh'
 
@@ -54,7 +54,7 @@ function multiSIR() {
     if [ -e "$ARG" ] && [[ $ARG != *"SIR"* ]] && [[ $ARG == *.dv ]]; then
 
         # using xargs to parallelize reconstruction to take advantage of multiple cores
-        find $OTF_DIR -mtime -$OTFAGE -name \\"$W"* | sort -n | head -$OTFNUM | xargs -n1 -P4 -I % $SIR_SCRIPT -i $ARG -o % -b $BACKGROUND -w $WIENER
+        find $OTF_DIR -mtime -$OTFAGE -name \\"$W"* | sort -rn | head -$OTFNUM | xargs -n1 -P4 -I % $SIR_SCRIPT -i $ARG -o % -b $BACKGROUND -w $WIENER
 
         #local B=${ARG##*/}
         #local FNAME=${B%.*}
@@ -151,14 +151,14 @@ fi
 
 INPUT=${@:$OPTIND:1} # input file
 
-if [ ! -f $INPUT ] || [ -z "$VAR" ]; then
-    echo "Input file not found... Please enter filepath to test:"
-    read INPUT
-    if [ ! -f $INPUT ]; then
-        echo "Input still no good... quitting"
-        exit 1; 
-    fi 
-fi
+#if [ ! -f $INPUT ] || [ -z "$VAR" ]; then
+#    echo "Input file not found... Please enter filepath to test:"
+#    read INPUT
+#    if [ ! -f $INPUT ]; then
+#        echo "Input still no good... quitting"
+#        exit 1; 
+#    fi 
+#fi
 
 
 RAW_FILE=$(readlink -f $INPUT)
@@ -215,7 +215,8 @@ if [ $NUMWAVES -gt 1 ]; then
 else
 
     # SINGLE-CHANNEL FILE
-    ln -s $RAW_FILE $OUTPUT_DIR/$BASENAME
+    echo "testing single wavelength file..."
+    ln -s $RAW_FILE $OUTPUT_DIR/$BASENAME 2>/dev/null
     multiSIR $OUTPUT_DIR/$BASENAME $WAVES
 
 fi

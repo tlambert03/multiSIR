@@ -84,6 +84,7 @@ export SW_BASE=/usr/local/softWoRx
 export DV_BASE=/usr/local/softWoRx
 export LD_LIBRARY_PATH=/usr/local/softWoRx/lib/i386
 
+echo "input: $BASE_FILE		OTF: $OTF_KEY"
 
 /usr/local/softWoRx/bin/i386/XYenhance3D.fftw \
   $INPUT_FILE \
