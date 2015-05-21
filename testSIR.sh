@@ -1,6 +1,21 @@
  #!/bin/bash
 
+###### CONSTANTS #######
+
+#PRIISM_LIB='/usr/local/omx/priism/Priism_setup.sh'
+PRIISM_LIB='/Users/talley/Dropbox/NIC/software/priism-4.4.1/Priism_setup.sh'
+OTF_DIR='/data1/OTFs/CORRECTED'
+SIR_SCRIPT='/home/worx/scripts/sir.sh'
+
+# default values
+OTFAGE=730 # max age of OTF: two years old
+OTFNUM=100 # max number of OTFs to process (for each channel)
+MAXT=1  # default to reconstructing only the single timepoint
+WIENER=0.0010
+BACKGROUND=80
+
 ###### FUNCTIONS #######
+
 function OTFkey() {
     #generate OTF key
     local OTF=$1
@@ -39,7 +54,7 @@ function multiSIR() {
     if [ -e "$ARG" ] && [[ $ARG != *"SIR"* ]] && [[ $ARG == *.dv ]]; then
 
         # using xargs to parallelize reconstruction to take advantage of multiple cores
-        find $OTF_DIR -mtime -$OTFAGE -name \\"$W"* | sort -n | head -$OTFNUM | xargs -n1 -P4 -I % $SIR_SCRIPT -i $ARG -o % -a $OPTIONS
+        find $OTF_DIR -mtime -$OTFAGE -name \\"$W"* | sort -n | head -$OTFNUM | xargs -n1 -P4 -I % $SIR_SCRIPT -i $ARG -o % -b $BACKGROUND -w $WIENER
 
         #local B=${ARG##*/}
         #local FNAME=${B%.*}
@@ -84,29 +99,33 @@ function splitFile() {
     wait
 }
 
+function show_help {
+    echo "Options:" 
+    echo "      -h    show this help message" 
+    echo "      -d    Set max age of OTF file in days old (default 730)" 
+    echo "      -n    Set max number of OTF files used (default 100)" 
+    echo "      -w    Force program to use specified OTF wavelength (don't match waves)"
+    echo "      -c    Only process specified wavelength from multi-channel input file"
+    echo "      -t    Number of timepoints to include in reconstructions (default 1)"
+    echo "      -w    Wiener filter for reconstructions (default 0.001)"
+    echo "      -b    Background for reconstructions (default 80)"
+    exit 1;
+} 
 
-###### MAIN #######
+###### MAIN PROGRAM #######
 
-# priism library required
-source /usr/local/omx/priism/Priism_setup.sh
 
-# directory with corrected OTFs
-OTF_DIR='/data1/OTFs/CORRECTED'
-
-SIR_SCRIPT='/home/worx/scripts/sir.sh'
-
-# default values
-OTFAGE=730 # max age of OTF: two years old
-OTFNUM=100 # max number of OTFs to process (for each channel)
-MAXT=1  # default to reconstructing only the single timepoint
-
-while getopts ":d:n:w:c:t:" flag; do
+while getopts ":hd:n:w:c:t:v:" flag; do
 case "$flag" in
+    h) show_help;;
     d) OTFAGE=$OPTARG;;
     n) OTFNUM=$OPTARG;;
     w) OTFWAV=$OPTARG;; # override default OTF->wavelength matching behavior
     c) CHANNEL=$OPTARG;; # do specified channel only
     t) MAXT=$OPTARG;;
+    v) WIENER=$OPTARG;;
+    b) BACKGROUND=$OPTARG;;
+    \?) echo "Invalid option: -$OPTARG"; exit 1;
 esac
 done
 
@@ -120,8 +139,28 @@ then
     echo "The channel override (-c) was not one of the available options (435,477,528,541,608,683)"; exit 1;
 fi
 
+# priism library required
+
+if [ ! -f $PRIISM_LIB ]; then
+    echo "Priism Library not found!"
+    echo "Please correct path in testSIR.sh"
+    exit 1;  
+else
+    source $PRIISM_LIB;
+fi
+
 INPUT=${@:$OPTIND:1} # input file
-OPTIONS=${@:$OPTIND+1:1} # options for reconstruction
+
+if [ ! -f $INPUT ] || [ -z "$VAR" ]; then
+    echo "Input file not found... Please enter filepath to test:"
+    read INPUT
+    if [ ! -f $INPUT ]; then
+        echo "Input still no good... quitting"
+        exit 1; 
+    fi 
+fi
+
+
 RAW_FILE=$(readlink -f $INPUT)
 
 # detect input file dimensions
@@ -173,7 +212,6 @@ if [ $NUMWAVES -gt 1 ]; then
     fi
 
 
-
 else
 
     # SINGLE-CHANNEL FILE
@@ -182,12 +220,3 @@ else
 
 fi
 
-# pull out the mod amps from the log files
-# find . -name \*SIR_log* | xargs grep "Amplitude" | awk '{print $1,$8,$9;}'
-
-# put it into an array
-# arr=( echo $(find . -name \*w608*SIR_log* | xargs -P4 grep "Amplitude" | awk '{print $9;}') )
-
-#scores=()
-# how to append to array
-#scores+=('foo')
