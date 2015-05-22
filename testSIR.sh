@@ -13,6 +13,10 @@ OTFNUM=100 # max number of OTFs to process (for each channel)
 MAXT=1  # default to reconstructing only the single timepoint
 WIENER=0.0010
 BACKGROUND=80
+OILRANGE=4 # default OTF oil search range
+OILCENTER=1516 # default OTF oil search center (restrict constructions to CENTER +/- RANGE)
+# script will try to parse OILCENTER from input filename, and fall back to this value ...
+
 
 ###### FUNCTIONS #######
 
@@ -49,12 +53,18 @@ function OTFdecode() {
 function multiSIR() {
 	local ARG=$1
 	local W=${OTFWAV:-$2}
+    local OILMIN=$(echo $OILCENTER-$OILRANGE | bc )
+    local OILMAX=$(echo $OILCENTER+$OILRANGE | bc )
 
     #if dv file, reconstruct multi
     if [ -e "$ARG" ] && [[ $ARG != *"SIR"* ]] && [[ $ARG == *.dv ]]; then
 
         # using xargs to parallelize reconstruction to take advantage of multiple cores
-        find $OTF_DIR -mtime -$OTFAGE -name \\"$W"* | sort -rn | head -$OTFNUM | xargs -n1 -P4 -I % $SIR_SCRIPT -i $ARG -o % -b $BACKGROUND -w $WIENER
+        find $OTF_DIR -mtime -$OTFAGE -name \\"$W"* | \
+        awk -F'_' -v min=$OILMIN -v max=$OILMAX '{ if ($3 >=min && $3<=max) print}' | \
+        sort -rn | \
+        head -$OTFNUM | \
+        xargs -n1 -P4 -I % $SIR_SCRIPT -i $ARG -o % -b $BACKGROUND -w $WIENER
 
 # use this for oil filtering
 # awk -F'_' '{ if ($3 >=1510 && $3<=$MAXOTF) print}'
@@ -108,6 +118,7 @@ function show_help {
     echo "      -d    Set max age of OTF file in days old (default 730)" 
     echo "      -n    Set max number of OTF files used (default 100)" 
     echo "      -w    Force program to use specified OTF wavelength (don't match waves)"
+    echo "      -o    Only use OTFs with oil RI +/- this input value (default center is 1.516 if not in file name)"
     echo "      -c    Only process specified wavelength from multi-channel input file"
     echo "      -t    Number of timepoints to include in reconstructions (default 1)"
     echo "      -w    Wiener filter for reconstructions (default 0.001)"
@@ -117,14 +128,14 @@ function show_help {
 
 ###### MAIN PROGRAM #######
 
-
-while getopts ":hd:n:w:c:t:v:b:" flag; do
+while getopts ":hd:n:w:c:o:t:v:b:" flag; do
 case "$flag" in
     h) show_help;;
     d) OTFAGE=$OPTARG;;
     n) OTFNUM=$OPTARG;;
     w) OTFWAV=$OPTARG;; # override default OTF->wavelength matching behavior
     c) CHANNEL=$OPTARG;; # do specified channel only
+    o) OILRANGE=$OPTARG;;
     t) MAXT=$OPTARG;;
     v) WIENER=$OPTARG;;
     b) BACKGROUND=$OPTARG;;
@@ -132,12 +143,14 @@ case "$flag" in
 esac
 done
 
-if [ -n "$OTFWAV" ] && [ $OTFWAV -ne 435 ] && [ $OTFWAV -ne 477 ] && [ $OTFWAV -ne 528 ] && [ $OTFWAV -ne 541 ] && [ $OTFWAV -ne 608 ] && [ $OTFWAV -ne 683 ];
+if [ -n "$OTFWAV" ] && [ $OTFWAV -ne 435 ] && [ $OTFWAV -ne 477 ] && [ $OTFWAV -ne 528 ] \
+    && [ $OTFWAV -ne 541 ] && [ $OTFWAV -ne 608 ] && [ $OTFWAV -ne 683 ];
 then
     echo "The OTF override (-w) was not one of the available options (435,477,528,541,608,683)"; exit 1;
 fi
 
-if [ -n "$CHANNEL" ] && [ $CHANNEL -ne 435 ] && [ $CHANNEL -ne 477 ] && [ $CHANNEL -ne 528 ] && [ $CHANNEL -ne 541 ] && [ $CHANNEL -ne 608 ] && [ $CHANNEL -ne 683 ];
+if [ -n "$CHANNEL" ] && [ $CHANNEL -ne 435 ] && [ $CHANNEL -ne 477 ] && [ $CHANNEL -ne 528 ] \
+    && [ $CHANNEL -ne 541 ] && [ $CHANNEL -ne 608 ] && [ $CHANNEL -ne 683 ];
 then
     echo "The channel override (-c) was not one of the available options (435,477,528,541,608,683)"; exit 1;
 fi
@@ -178,7 +191,14 @@ FNAME=${BASENAME%.*}
 OUTPUT_DIR="${INPUT_DIR}/${FNAME}_TEST"
 mkdir -p $OUTPUT_DIR
 
-# test for timelapse first
+# Try to find oil RI in the filename, looking for string between 1510_ and 1529_
+OILCHECK= $( echo $FNAME | grep -E -o '15[12]\d_' | tr -d '_' )
+if [ $OILCHECK -lt 1525 ] && [ $OILCHECK -gt 1509 ]; then
+    echo "found oil RI in filename: ${OILCHECK}"
+    OILCENTER=$OILCHECK
+fi
+
+# test whether timelapse, if so crop to first timepoint (or MAXT specified by user)
 if [ $NUMTIMES -gt 1 ]; then
     echo "${NUMTIMES} timepoints... cropping to first timepoint"
     CPY="${OUTPUT_DIR}/${FNAME}_T1.dv"
