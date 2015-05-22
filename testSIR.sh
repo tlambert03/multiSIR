@@ -207,7 +207,7 @@ fi
 
 if [ ! -f $PRIISM_LIB ]; then
     echo "Priism Library not found!"
-    echo "Please correct path in testSIR.sh"
+    echo "Please enter correct path in testSIR.sh"
     exit 1;  
 else
     source $PRIISM_LIB;
@@ -239,9 +239,7 @@ BASENAME=${RAW_FILE##*/}
 FNAME=${BASENAME%.*}
 
 # Try to find oil RI in the filename, looking for string between 1510_ and 1529_
-echo $FNAME
 OILCHECK=$(echo $FNAME | grep -G -o '15[12][1-9]_' | tr -d '_')
-echo "check: "$OILCHECK
 if [ ! -z $OILCHECK ] && [ $OILCHECK -lt 1525 ] && [ $OILCHECK -gt 1509 ]; then
     echo "found oil RI in filename: ${OILCHECK}"
     OILCENTER=$OILCHECK
