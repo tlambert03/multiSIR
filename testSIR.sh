@@ -2,10 +2,10 @@
 
 ###### CONSTANTS #######
 
-#PRIISM_LIB='/usr/local/omx/priism/Priism_setup.sh'
-PRIISM_LIB='/Users/talley/Dropbox/NIC/software/priism-4.4.1/Priism_setup.sh'
-#OTF_DIR='/data1/OTFs/CORRECTED'
-OTF_DIR='/Users/talley/Dropbox/OMX/CORRECTED'
+PRIISM_LIB='/usr/local/omx/priism/Priism_setup.sh'
+#PRIISM_LIB='/Users/talley/Dropbox/NIC/software/priism-4.4.1/Priism_setup.sh'
+OTF_DIR='/data1/OTFs/CORRECTED'
+#OTF_DIR='/Users/talley/Dropbox/OMX/CORRECTED'
 SIR_SCRIPT='/home/worx/scripts/sir.sh'
 
 # default values
@@ -89,23 +89,26 @@ function multiSIR() {
             # using xargs to parallelize reconstruction to take advantage of multiple cores
             echo "--------------------------------------"
             echo "Dry Run - NO RECONSTRUCTIONS PERFORMED"
-            echo "Input: ${ARG}"
+            echo "Input: $(basename $ARG)"
             echo "Background: ${BACKGROUND}"
             echo "Wiener: ${WIENER}"
+            echo "OTF oil range: $OILMIN - $OILMAX"
+            echo "OTF wavelength: $W"
             echo "OTFs that would be used:"
-            find $OTF_DIR -mtime -$OTFAGE -name \\"$W"* | \
+            basename $(find $OTF_DIR -mtime -$OTFAGE -name \\"$W"* | \
             awk -F'_' -v min=$OILMIN -v max=$OILMAX '{ if ($3 >=min && $3<=max) print}' | \
             sort -rn | \
-            head -$OTFNUM
+            head -$OTFNUM)
         else
+            echo "reconstructing the crap out of wavelength ${W}..."
             # using xargs to parallelize reconstruction to take advantage of multiple cores
             find $OTF_DIR -mtime -$OTFAGE -name \\"$W"* | \
             awk -F'_' -v min=$OILMIN -v max=$OILMAX '{ if ($3 >=min && $3<=max) print}' | \
             sort -rn | \
             head -$OTFNUM | \
             xargs -n1 -P4 -I % $SIR_SCRIPT -i $ARG -o % -b $BACKGROUND -w $WIENER
-
         fi
+        echo ""
 
     else
         echo "file ${ARG} does not appear to be a raw SIM .dv file..."
@@ -138,24 +141,40 @@ function splitFile() {
 }
 
 function show_help {
-    echo "Options:" 
-    echo "   -h   Help         show this help message" 
-    echo "   -x   Dry Run      perform a dry run: No reconstructions will be performed (just info)" 
+    echo "MultiSIR OTF tester, version 0.1"
+    echo ""
+    echo "Usage:    testSIR [options] inputfile"
+    echo "Example:  testSIR -n10 -c528 -b100 -t10 inputfile" 
+    echo ""
+    echo "Optional Flags:" 
+    echo "   -h   Help         Show this help message" 
+    echo "   -x   Dry Run      Perform a dry run: no reconstructions will be performed"
+    echo "" 
+    echo "Options that expect arguments:" 
     echo "   -d   Cap Age      Set max age of OTF file in days old (default 730)" 
     echo "   -n   Cap #OTFs    Set max number of OTF files used (default 100)" 
     echo "   -f   Force OTF    Force program to use specified OTF wavelength (don't match waves)"
     echo "   -c   SingleWave   Only process specified wavelength from multi-channel input file"
+    echo "   -l   Oil Center   Only use OTFs with oil RI surrounding this input value"
     echo "   -o   Oil Range    Only use OTFs with oil RI +/- this input value"
     echo "                     (default center is 1.516 if not in file name)"
     echo "   -t   Timepoints   Number of timepoints to include in reconstructions (default 1)"
     echo "   -w   Weiner       Wiener filter for reconstructions (default 0.001)"
     echo "   -b   Background   Background for reconstructions (default 80)"
+    echo ""
+    echo "Channel Lookup Guide:" 
+    echo "*channels must be expressed as emission wavelengths*"
+    echo "    Ex -> Em  (BGR)       Ex -> Em  (CYR) "
+    echo "   405 -> 435            445 -> 477  "
+    echo "   488 -> 528            514 -> 541  "
+    echo "   568 -> 608  "
+    echo "   642 -> 683  "
     exit 1;
 } 
 
 ###### MAIN PROGRAM #######
 
-while getopts ":hxd:n:w:c:o:t:v:b:" flag; do
+while getopts ":hxd:n:f:c:o:l:t:w:b:" flag; do
 case "$flag" in
     h) show_help;;
     x) DRYRUN=1;;
@@ -164,6 +183,7 @@ case "$flag" in
     f) OTFWAV=$OPTARG;; # override default OTF->wavelength matching behavior
     c) CHANNEL=$OPTARG;; # do specified channel only
     o) OILRANGE=$OPTARG;;
+    l) OILCENTER=$OPTARG;;
     t) MAXT=$OPTARG;;
     w) WIENER=$OPTARG;;
     b) BACKGROUND=$OPTARG;;
@@ -222,10 +242,13 @@ FNAME=${BASENAME%.*}
 
 # Try to find oil RI in the filename, looking for string between 1510_ and 1529_
 OILCHECK=$(echo ${FNAME} | grep -E -o '15[12]\d_' | tr -d '_')
-if [ $OILCHECK -lt 1525 ] && [ $OILCHECK -gt 1509 ]; then
+if [ ! -z $OILCHECK ] && [ $OILCHECK -lt 1525 ] && [ $OILCHECK -gt 1509 ]; then
     echo "found oil RI in filename: ${OILCHECK}"
     OILCENTER=$OILCHECK
+else
+    echo "oil RI not found in filename, centering around ${OILCENTER}"
 fi
+
 
 # create output directory
 OUTPUT_DIR="${INPUT_DIR}/${FNAME}_TEST"
@@ -262,8 +285,8 @@ if [ $NUMWAVES -gt 1 ]; then
         # RECONSTRUCT EACH WAVELENGTH
         for w in $WAVES; do
             CPY=${OUTPUT_DIR}/${BASENAME/.dv/_$w.dv}
-            echo "reconstructing the crap out of wavelength ${w}..."
             multiSIR $CPY $w
+            echo ""
         done
 
     fi
