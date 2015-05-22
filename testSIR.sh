@@ -2,10 +2,10 @@
 
 ###### CONSTANTS #######
 
-PRIISM_LIB='/usr/local/omx/priism/Priism_setup.sh'
-#PRIISM_LIB='/Users/talley/Dropbox/NIC/software/priism-4.4.1/Priism_setup.sh'
-OTF_DIR='/data1/OTFs/CORRECTED'
-#OTF_DIR='/Users/talley/Dropbox/OMX/CORRECTED'
+#PRIISM_LIB='/usr/local/omx/priism/Priism_setup.sh'
+PRIISM_LIB='/Users/talley/Dropbox/NIC/software/priism-4.4.1/Priism_setup.sh'
+#OTF_DIR='/data1/OTFs/CORRECTED'
+OTF_DIR='/Users/talley/Dropbox/OMX/CORRECTED'
 SIR_SCRIPT='/home/worx/scripts/sir.sh'
 
 # default values
@@ -121,6 +121,15 @@ function waves() {
 
 function numwaves() {
     echo "$(echo | header $1 | grep "Number of Wavelengths" | awk -F'    ' '{print $2}')"
+}
+
+function numplanes() {
+    NZ=`echo | header $1 | grep "(NZ,NW,NT)" | awk -F'   ' '{print $2}'`
+    echo $NZ/3 | bc
+}
+
+function substack() {
+
 }
 
 function numtimepoints() {
