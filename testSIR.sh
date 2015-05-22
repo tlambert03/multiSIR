@@ -224,8 +224,6 @@ if [ ! -f $INPUT ] || [ -z $INPUT ]; then
     fi 
 fi
 
-echo ''
-
 
 #RAW_FILE=$(readlink -f $INPUT)
 RAW_FILE=$(rlinkf $INPUT)
@@ -241,7 +239,9 @@ BASENAME=${RAW_FILE##*/}
 FNAME=${BASENAME%.*}
 
 # Try to find oil RI in the filename, looking for string between 1510_ and 1529_
-OILCHECK=$(echo ${FNAME} | grep -E -o '15[12]\d_' | tr -d '_')
+echo $FNAME
+OILCHECK=$(echo $FNAME | grep -G -o '15[12][1-9]_' | tr -d '_')
+echo "check: "$OILCHECK
 if [ ! -z $OILCHECK ] && [ $OILCHECK -lt 1525 ] && [ $OILCHECK -gt 1509 ]; then
     echo "found oil RI in filename: ${OILCHECK}"
     OILCENTER=$OILCHECK
