@@ -2,9 +2,10 @@
 
 ###### CONSTANTS #######
 
-PRIISM_LIB='/usr/local/omx/priism/Priism_setup.sh'
-#PRIISM_LIB='/Users/talley/Dropbox/NIC/software/priism-4.4.1/Priism_setup.sh'
-OTF_DIR='/data1/OTFs/CORRECTED'
+#PRIISM_LIB='/usr/local/omx/priism/Priism_setup.sh'
+PRIISM_LIB='/Users/talley/Dropbox/NIC/software/priism-4.4.1/Priism_setup.sh'
+#OTF_DIR='/data1/OTFs/CORRECTED'
+OTF_DIR='/Users/talley/Dropbox/OMX/CORRECTED'
 SIR_SCRIPT='/home/worx/scripts/sir.sh'
 
 # default values
@@ -15,8 +16,8 @@ WIENER=0.0010
 BACKGROUND=80
 OILRANGE=4 # default OTF oil search range
 OILCENTER=1516 # default OTF oil search center (restrict constructions to CENTER +/- RANGE)
-# script will try to parse OILCENTER from input filename, and fall back to this value ...
-
+        # script will try to parse OILCENTER from input filename, and fall back to this value ...
+DRYRUN=0 # default to actually performing the reconstruction, flag -x will just output info
 
 ###### FUNCTIONS #######
 
@@ -50,6 +51,31 @@ function OTFdecode() {
     echo "${OTF_WAVE}_${OTF_DATE}_${OTF_OIL}_${OTF_MEDIUM}_${OTF_ANGLE}_${OTF_BEAD}.otf"
 }
 
+
+function rlinkf() {
+
+    TARGET_FILE=$1
+
+    cd `dirname $TARGET_FILE`
+    TARGET_FILE=`basename $TARGET_FILE`
+
+    # Iterate down a (possible) chain of symlinks
+    while [ -L "$TARGET_FILE" ]
+    do
+        TARGET_FILE=`readlink $TARGET_FILE`
+        cd `dirname $TARGET_FILE`
+        TARGET_FILE=`basename $TARGET_FILE`
+    done
+
+    # Compute the canonicalized name by finding the physical path 
+    # for the directory we're in and appending the target file.
+    PHYS_DIR=`pwd -P`
+    RESULT=$PHYS_DIR/$TARGET_FILE
+    echo $RESULT
+
+}
+
+
 function multiSIR() {
 	local ARG=$1
 	local W=${OTFWAV:-$2}
@@ -59,29 +85,28 @@ function multiSIR() {
     #if dv file, reconstruct multi
     if [ -e "$ARG" ] && [[ $ARG != *"SIR"* ]] && [[ $ARG == *.dv ]]; then
 
-        # using xargs to parallelize reconstruction to take advantage of multiple cores
-        find $OTF_DIR -mtime -$OTFAGE -name \\"$W"* | \
-        awk -F'_' -v min=$OILMIN -v max=$OILMAX '{ if ($3 >=min && $3<=max) print}' | \
-        sort -rn | \
-        head -$OTFNUM | \
-        xargs -n1 -P4 -I % $SIR_SCRIPT -i $ARG -o % -b $BACKGROUND -w $WIENER
+        if [ $DRYRUN -eq 1 ]; then 
+            # using xargs to parallelize reconstruction to take advantage of multiple cores
+            echo "--------------------------------------"
+            echo "Dry Run - NO RECONSTRUCTIONS PERFORMED"
+            echo "Input: ${ARG}"
+            echo "Background: ${BACKGROUND}"
+            echo "Wiener: ${WIENER}"
+            echo "OTFs that would be used:"
+            find $OTF_DIR -mtime -$OTFAGE -name \\"$W"* | \
+            awk -F'_' -v min=$OILMIN -v max=$OILMAX '{ if ($3 >=min && $3<=max) print}' | \
+            sort -rn | \
+            head -$OTFNUM
+        else
+            # using xargs to parallelize reconstruction to take advantage of multiple cores
+            find $OTF_DIR -mtime -$OTFAGE -name \\"$W"* | \
+            awk -F'_' -v min=$OILMIN -v max=$OILMAX '{ if ($3 >=min && $3<=max) print}' | \
+            sort -rn | \
+            head -$OTFNUM | \
+            xargs -n1 -P4 -I % $SIR_SCRIPT -i $ARG -o % -b $BACKGROUND -w $WIENER
 
-# use this for oil filtering
-# awk -F'_' '{ if ($3 >=1510 && $3<=$MAXOTF) print}'
+        fi
 
-        #local B=${ARG##*/}
-        #local FNAME=${B%.*}
-        #old method, without parallelization
-        #	for OTF in $OTF_DIR/$W*.otf     #ONLY corrected OTFS
-        #	do
-        #
-        #	OTF_KEY=$(OTFkey $OTF)
-        #
-        #	OUTPUT_FILE="${OUTPUT_DIR}/${FNAME}_${OTF_KEY}_SIR.dv"
-        #	echo "OTF: ${OTF} (key:${OTF_KEY})"
-        #
-        #	./sir.sh -i $ARG -o $OTF -p $OUTPUT_FILE -a $OPTIONS;
-        #	done
     else
         echo "file ${ARG} does not appear to be a raw SIM .dv file..."
     fi
@@ -114,30 +139,33 @@ function splitFile() {
 
 function show_help {
     echo "Options:" 
-    echo "      -h    show this help message" 
-    echo "      -d    Set max age of OTF file in days old (default 730)" 
-    echo "      -n    Set max number of OTF files used (default 100)" 
-    echo "      -w    Force program to use specified OTF wavelength (don't match waves)"
-    echo "      -o    Only use OTFs with oil RI +/- this input value (default center is 1.516 if not in file name)"
-    echo "      -c    Only process specified wavelength from multi-channel input file"
-    echo "      -t    Number of timepoints to include in reconstructions (default 1)"
-    echo "      -w    Wiener filter for reconstructions (default 0.001)"
-    echo "      -b    Background for reconstructions (default 80)"
+    echo "   -h   Help         show this help message" 
+    echo "   -x   Dry Run      perform a dry run: No reconstructions will be performed (just info)" 
+    echo "   -d   Cap Age      Set max age of OTF file in days old (default 730)" 
+    echo "   -n   Cap #OTFs    Set max number of OTF files used (default 100)" 
+    echo "   -f   Force OTF    Force program to use specified OTF wavelength (don't match waves)"
+    echo "   -c   SingleWave   Only process specified wavelength from multi-channel input file"
+    echo "   -o   Oil Range    Only use OTFs with oil RI +/- this input value"
+    echo "                     (default center is 1.516 if not in file name)"
+    echo "   -t   Timepoints   Number of timepoints to include in reconstructions (default 1)"
+    echo "   -w   Weiner       Wiener filter for reconstructions (default 0.001)"
+    echo "   -b   Background   Background for reconstructions (default 80)"
     exit 1;
 } 
 
 ###### MAIN PROGRAM #######
 
-while getopts ":hd:n:w:c:o:t:v:b:" flag; do
+while getopts ":hxd:n:w:c:o:t:v:b:" flag; do
 case "$flag" in
     h) show_help;;
+    x) DRYRUN=1;;
     d) OTFAGE=$OPTARG;;
     n) OTFNUM=$OPTARG;;
-    w) OTFWAV=$OPTARG;; # override default OTF->wavelength matching behavior
+    f) OTFWAV=$OPTARG;; # override default OTF->wavelength matching behavior
     c) CHANNEL=$OPTARG;; # do specified channel only
     o) OILRANGE=$OPTARG;;
     t) MAXT=$OPTARG;;
-    v) WIENER=$OPTARG;;
+    w) WIENER=$OPTARG;;
     b) BACKGROUND=$OPTARG;;
     \?) echo "Invalid option: -$OPTARG"; exit 1;
 esac
@@ -167,17 +195,20 @@ fi
 
 INPUT=${@:$OPTIND:1} # input file
 
-#if [ ! -f $INPUT ] || [ -z "$VAR" ]; then
-#    echo "Input file not found... Please enter filepath to test:"
-#    read INPUT
-#    if [ ! -f $INPUT ]; then
-#        echo "Input still no good... quitting"
-#        exit 1; 
-#    fi 
-#fi
+if [ ! -f $INPUT ] || [ -z $INPUT ]; then
+    echo "Input file not found..."
+    read -e -p "Please enter new filepath: " INPUT
+    if [ ! -f $INPUT ] || [ -z $INPUT ]; then
+        echo "Input still no good... quitting"
+        show_help;
+    fi 
+fi
+
+echo ''
 
 
-RAW_FILE=$(readlink -f $INPUT)
+#RAW_FILE=$(readlink -f $INPUT)
+RAW_FILE=$(rlinkf $INPUT)
 
 # detect input file dimensions
 NUMWAVES=$(numwaves $RAW_FILE)
@@ -188,19 +219,22 @@ NUMTIMES=$(numtimepoints $RAW_FILE)
 INPUT_DIR=${RAW_FILE%/*}
 BASENAME=${RAW_FILE##*/}
 FNAME=${BASENAME%.*}
-OUTPUT_DIR="${INPUT_DIR}/${FNAME}_TEST"
-mkdir -p $OUTPUT_DIR
 
 # Try to find oil RI in the filename, looking for string between 1510_ and 1529_
-OILCHECK= $( echo $FNAME | grep -E -o '15[12]\d_' | tr -d '_' )
+OILCHECK=$(echo ${FNAME} | grep -E -o '15[12]\d_' | tr -d '_')
 if [ $OILCHECK -lt 1525 ] && [ $OILCHECK -gt 1509 ]; then
     echo "found oil RI in filename: ${OILCHECK}"
     OILCENTER=$OILCHECK
 fi
 
+# create output directory
+OUTPUT_DIR="${INPUT_DIR}/${FNAME}_TEST"
+mkdir -p $OUTPUT_DIR
+
+
 # test whether timelapse, if so crop to first timepoint (or MAXT specified by user)
 if [ $NUMTIMES -gt 1 ]; then
-    echo "${NUMTIMES} timepoints... cropping to first timepoint"
+    echo "${NUMTIMES} timepoints... cropping to first $MAXT timepoint(s)"
     CPY="${OUTPUT_DIR}/${FNAME}_T1.dv"
     CopyRegion $RAW_FILE $CPY -t=1:${MAXT}:1;
     RAW_FILE=$CPY
