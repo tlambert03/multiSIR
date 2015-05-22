@@ -95,10 +95,10 @@ function multiSIR() {
             echo "OTF oil range: $OILMIN - $OILMAX"
             echo "OTF wavelength: $W"
             echo "OTFs that would be used:"
-            basename $(find $OTF_DIR -mtime -$OTFAGE -name \\"$W"* | \
+            find $OTF_DIR -mtime -$OTFAGE -name \\"$W"* | \
             awk -F'_' -v min=$OILMIN -v max=$OILMAX '{ if ($3 >=min && $3<=max) print}' | \
             sort -rn | \
-            head -$OTFNUM)
+            head -$OTFNUM
         else
             echo "reconstructing the crap out of wavelength ${W}..."
             # using xargs to parallelize reconstruction to take advantage of multiple cores
