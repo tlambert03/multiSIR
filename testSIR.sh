@@ -2,10 +2,10 @@
 
 ###### CONSTANTS #######
 
-#PRIISM_LIB='/usr/local/omx/priism/Priism_setup.sh'
-PRIISM_LIB='/Users/talley/Dropbox/NIC/software/priism-4.4.1/Priism_setup.sh'
-#OTF_DIR='/data1/OTFs/CORRECTED'
-OTF_DIR='/Users/talley/Dropbox/OMX/CORRECTED'
+PRIISM_LIB='/usr/local/omx/priism/Priism_setup.sh'
+#PRIISM_LIB='${HOME}/Dropbox/omx/software/priism-4.4.1/Priism_setup.sh'
+OTF_DIR='/data1/OTFs/CORRECTED'
+#OTF_DIR="${HOME}/Dropbox/OMX/CORRECTED"
 SIR_SCRIPT='/home/worx/scripts/sir.sh'
 
 # default values
@@ -18,6 +18,9 @@ OILRANGE=4 # default OTF oil search range
 OILCENTER=1516 # default OTF oil search center (restrict constructions to CENTER +/- RANGE)
         # script will try to parse OILCENTER from input filename, and fall back to this value ...
 DRYRUN=0 # default to actually performing the reconstruction, flag -x will just output info
+ZDIV=0 # default behavior: only use a single substack (don't divide up Z-planes)
+nANGLES=3
+nPHASES=5
 
 ###### FUNCTIONS #######
 
@@ -67,7 +70,7 @@ function rlinkf() {
         TARGET_FILE=`basename $TARGET_FILE`
     done
 
-    # Compute the canonicalized name by finding the physical path 
+    # Compute the canonicalized name by finding the physical path
     # for the directory we're in and appending the target file.
     PHYS_DIR=`pwd -P`
     RESULT=$PHYS_DIR/$TARGET_FILE
@@ -85,8 +88,7 @@ function multiSIR() {
     #if dv file, reconstruct multi
     if [ -e "$ARG" ] && [[ $ARG != *"SIR"* ]] && [[ $ARG == *.dv ]]; then
 
-        if [ $DRYRUN -eq 1 ]; then 
-            # using xargs to parallelize reconstruction to take advantage of multiple cores
+        if [ $DRYRUN -eq 1 ]; then
             echo "--------------------------------------"
             echo "Dry Run - NO RECONSTRUCTIONS PERFORMED"
             echo "Input: $(basename $ARG)"
@@ -115,6 +117,17 @@ function multiSIR() {
     fi
 }
 
+function oilCheck() {
+    # Try to find oil RI in the filename, looking for string between 1510_ and 1529_
+    OILCHECK=$(echo $FNAME | grep -G -o '15[12][1-9]_' | tr -d '_')
+    if [ ! -z $OILCHECK ] && [ $OILCHECK -lt 1525 ] && [ $OILCHECK -gt 1509 ]; then
+        echo "found oil RI in filename: ${OILCHECK}"
+        OILCENTER=$OILCHECK
+    else
+        echo "oil RI not found in filename, centering around ${OILCENTER}"
+    fi
+}
+
 function waves() {
     echo "$(echo | header $1 | grep "Wavelengths (nm)" | awk -F'   ' '{print $2}')"
 }
@@ -125,11 +138,69 @@ function numwaves() {
 
 function numplanes() {
     NZ=`echo | header $1 | grep "(NZ,NW,NT)" | awk -F'   ' '{print $2}'`
-    echo $NZ/3 | bc
+    echo "$NZ/($nANGLES * $nPHASES)" | bc
 }
 
-function substack() {
 
+function substack() {
+    local SOURCE=$1
+    local START=$2
+    local STOP=${3:-$START}
+    local NP=$(numplanes $SOURCE)
+    local n=$(echo "$NP * $nPHASES" | bc)
+    local start1=$(echo "5 * ($START - 1)" | bc)
+    local start2=$(echo "$start1 + $n" | bc)
+    local start3=$(echo "$start2 + $n" | bc)
+    local stop1=$(echo "5 * ($STOP) - 1" | bc)
+    local stop2=$(echo "$stop1 + $n" | bc)
+    local stop3=$(echo "$stop2 + $n" | bc)
+
+    CopyRegion $SOURCE ${SOURCE/.dv/_subA1.dv} -z=${start1}:$stop1
+    CopyRegion $SOURCE ${SOURCE/.dv/_subA2.dv} -z=${start2}:$stop2
+    CopyRegion $SOURCE ${SOURCE/.dv/_subA3.dv} -z=${start3}:$stop3
+
+    if [ $STOP -gt $START ];
+    then
+        string="Z"$START"-"$STOP
+    else
+        string="Z"$START
+    fi
+
+    mergemrc -append_z ${SOURCE/.dv/_$string.dv} ${SOURCE/.dv/_subA1.dv} ${SOURCE/.dv/_subA2.dv} ${SOURCE/.dv/_subA3.dv}
+
+    rm -f ${SOURCE/.dv/_subA1.dv}
+    rm -f ${SOURCE/.dv/_subA2.dv}
+    rm -f ${SOURCE/.dv/_subA3.dv}
+}
+
+function makeSubstacks() {
+    local FILE=$1
+    local S=$2
+    local STACKu=$(echo "$S * 0.125" | bc)
+    local NUMPLANES=$(numplanes $FILE)
+
+    if [ $S -lt 9 ]; then
+        echo "Stack size: $STACKu"
+        read -p "It is not advisable to use a stack size < 1 micron, cancel? (y/n): " CHECK
+        if [ "$CHECK" = "y" ] || [ "$CHECK" = "Y" ];
+        then
+            echo "exiting..."
+            exit 1;
+        fi
+    fi
+
+    i="1"
+    j=$[$i+$S-1]
+    remain=$[$NUMPLANES-$j]
+    while [ $remain -gt $S ]
+    do
+        echo "creating substack Z${i}-${j}"
+        substack $FILE $i $j
+        i=$j
+        j=$[$i+$S-1]
+        remain=$[$NUMPLANES-$j]
+    done
+    substack $FILE $i $NUMPLANES
 }
 
 function numtimepoints() {
@@ -149,21 +220,55 @@ function splitFile() {
     wait
 }
 
+function reconChannels() {
+    local FILE=$1
+    local bname=${FILE##*/}
+    local FNAME=${bname%.*}
+
+    # test for multiple channels
+    if [ $NUMWAVES -gt 1 ]; then
+        # single channel override set
+        if [ -n "$CHANNEL" ]; then
+            echo "Single-wave override: only copying channel ${CHANNEL}"
+            CPY=${OUTPUT_DIR}/${bname/.dv/_$CHANNEL.dv}
+            # make a duplicate file containing just one of the wavelengths
+            CopyRegion $FILE $CPY -w=$CHANNEL
+            multiSIR $CPY $CHANNEL
+        else
+            # Split file into component wavelengths
+            echo "splitting file into ${NUMWAVES} wavelengths: ${WAVES}"
+            splitFile $FILE;
+
+            # Multi-reconstruct each wavelength seperately
+            for w in $WAVES; do
+                CPY=${OUTPUT_DIR}/${bname/.dv/_$w.dv}
+                multiSIR $CPY $w
+                echo ""
+            done
+        fi
+    else
+        # Single-channel file
+        echo "testing single wavelength file..."
+        multiSIR $OUTPUT_DIR/$bname $WAVES
+    fi
+}
+
 function show_help {
     echo "MultiSIR OTF tester, version 0.1"
     echo ""
     echo "Usage:    testSIR [options] inputfile"
-    echo "Example:  testSIR -n10 -c528 -b100 -t10 inputfile" 
+    echo "Example:  testSIR -n10 -c528 -b100 -t10 inputfile"
     echo ""
-    echo "Optional Flags:" 
-    echo "   -h   Help         Show this help message" 
+    echo "Optional Flags:"
+    echo "   -h   Help         Show this help message"
     echo "   -x   Dry Run      Perform a dry run: no reconstructions will be performed"
-    echo "" 
-    echo "Options that expect arguments:" 
-    echo "   -d   Cap Age      Set max age of OTF file in days old (default 730)" 
-    echo "   -n   Cap #OTFs    Set max number of OTF files used (default 100)" 
+    echo ""
+    echo "Options that expect arguments:"
+    echo "   -d   Cap Age      Set max age of OTF file in days old (default 730)"
+    echo "   -n   Cap #OTFs    Set max number of OTF files used (default 100)"
     echo "   -f   Force OTF    Force program to use specified OTF wavelength (don't match waves)"
     echo "   -c   SingleWave   Only process specified wavelength from multi-channel input file"
+    echo "   -Z   Zdivisions   Split input into n substacks"
     echo "   -l   Oil Center   Only use OTFs with oil RI surrounding this input value"
     echo "   -o   Oil Range    Only use OTFs with oil RI +/- this input value"
     echo "                     (default center is 1.516 if not in file name)"
@@ -171,7 +276,7 @@ function show_help {
     echo "   -w   Weiner       Wiener filter for reconstructions (default 0.001)"
     echo "   -b   Background   Background for reconstructions (default 80)"
     echo ""
-    echo "Channel Lookup Guide:" 
+    echo "Channel Lookup Guide:"
     echo "*channels must be expressed as emission wavelengths*"
     echo "    Ex -> Em  (BGR)       Ex -> Em  (CYR) "
     echo "   405 -> 435            445 -> 477  "
@@ -179,11 +284,11 @@ function show_help {
     echo "   568 -> 608  "
     echo "   642 -> 683  "
     exit 1;
-} 
+}
 
 ###### MAIN PROGRAM #######
 
-while getopts ":hxd:n:f:c:o:l:t:w:b:" flag; do
+while getopts ":hxd:n:f:c:o:l:t:w:z:b:" flag; do
 case "$flag" in
     h) show_help;;
     x) DRYRUN=1;;
@@ -195,6 +300,7 @@ case "$flag" in
     l) OILCENTER=$OPTARG;;
     t) MAXT=$OPTARG;;
     w) WIENER=$OPTARG;;
+    z) ZDIV=$OPTARG;;
     b) BACKGROUND=$OPTARG;;
     \?) echo "Invalid option: -$OPTARG"; exit 1;
 esac
@@ -203,13 +309,13 @@ done
 if [ -n "$OTFWAV" ] && [ $OTFWAV -ne 435 ] && [ $OTFWAV -ne 477 ] && [ $OTFWAV -ne 528 ] \
     && [ $OTFWAV -ne 541 ] && [ $OTFWAV -ne 608 ] && [ $OTFWAV -ne 683 ];
 then
-    echo "The OTF override (-w) was not one of the available options (435,477,528,541,608,683)"; exit 1;
+    echo "The OTF override (-w) was not one of the available options (435,477,528,541,608,683)"; show_help;
 fi
 
 if [ -n "$CHANNEL" ] && [ $CHANNEL -ne 435 ] && [ $CHANNEL -ne 477 ] && [ $CHANNEL -ne 528 ] \
     && [ $CHANNEL -ne 541 ] && [ $CHANNEL -ne 608 ] && [ $CHANNEL -ne 683 ];
 then
-    echo "The channel override (-c) was not one of the available options (435,477,528,541,608,683)"; exit 1;
+    echo "The channel override (-c) was not one of the available options (435,477,528,541,608,683)"; show_help;
 fi
 
 # priism library required
@@ -217,7 +323,7 @@ fi
 if [ ! -f $PRIISM_LIB ]; then
     echo "Priism Library not found!"
     echo "Please enter correct path in testSIR.sh"
-    exit 1;  
+    exit 1;
 else
     source $PRIISM_LIB;
 fi
@@ -230,7 +336,7 @@ if [ ! -f $INPUT ] || [ -z $INPUT ]; then
     if [ ! -f $INPUT ] || [ -z $INPUT ]; then
         echo "Input still no good... quitting"
         show_help;
-    fi 
+    fi
 fi
 
 
@@ -239,72 +345,49 @@ RAW_FILE=$(rlinkf $INPUT)
 
 # detect input file dimensions
 NUMWAVES=$(numwaves $RAW_FILE)
+NUMPLANES=$(numplanes $RAW_FILE)
 WAVES=$(waves $RAW_FILE)
 NUMTIMES=$(numtimepoints $RAW_FILE)
 
-# create output directory
 INPUT_DIR=${RAW_FILE%/*}
 BASENAME=${RAW_FILE##*/}
 FNAME=${BASENAME%.*}
+OUTPUT_DIR="${INPUT_DIR}/${FNAME}_TEST"
 
-# Try to find oil RI in the filename, looking for string between 1510_ and 1529_
-OILCHECK=$(echo $FNAME | grep -G -o '15[12][1-9]_' | tr -d '_')
-if [ ! -z $OILCHECK ] && [ $OILCHECK -lt 1525 ] && [ $OILCHECK -gt 1509 ]; then
-    echo "found oil RI in filename: ${OILCHECK}"
-    OILCENTER=$OILCHECK
-else
-    echo "oil RI not found in filename, centering around ${OILCENTER}"
-fi
-
+# placeholder... dry run should go here
+# if [ $DRYRUN -eq 1 ]; then
+#     dryRun()
+# else
+#     doIt
+# fi
 
 # create output directory
-OUTPUT_DIR="${INPUT_DIR}/${FNAME}_TEST"
 mkdir -p $OUTPUT_DIR
+ln -s $RAW_FILE ${OUTPUT_DIR}/$BASENAME 2>/dev/null
+lnFILE=${OUTPUT_DIR}/$BASENAME
 
+oilCheck
 
 # test whether timelapse, if so crop to first timepoint (or MAXT specified by user)
 if [ $NUMTIMES -gt 1 ]; then
     echo "${NUMTIMES} timepoints... cropping to first $MAXT timepoint(s)"
-    CPY="${OUTPUT_DIR}/${FNAME}_T1.dv"
-    CopyRegion $RAW_FILE $CPY -t=1:${MAXT}:1;
-    RAW_FILE=$CPY
+    CPY=${lnFILE/.dv/_T1.dv}
+    CopyRegion $lnFILE $CPY -t=1:${MAXT}:1;
+    lnFILE=$CPY
 fi
 
 
-# then test for multiple channels
-if [ $NUMWAVES -gt 1 ]; then
+# ZDIV is the number planes in each substack
+if [ $ZDIV -gt 0 ]; then
 
-    # single channel override set
-    if [ -n "$CHANNEL" ]; then
+    makeSubstacks $lnFILE $ZDIV
 
-        echo "Single-wave override: only copying channel ${CHANNEL}"
-        CPY=${OUTPUT_DIR}/${BASENAME/.dv/_$CHANNEL.dv}
-        # make a duplicate file containing just one of the wavelengths
-        CopyRegion $RAW_FILE $CPY -w=$CHANNEL
-        multiSIR $CPY $CHANNEL
-
-    else
-
-        # SPLIT FILE INTO WAVELENGTHS
-        echo "splitting file into ${NUMWAVES} wavelengths: ${WAVES}"
-        splitFile $RAW_FILE;
-
-        # RECONSTRUCT EACH WAVELENGTH
-        for w in $WAVES; do
-            CPY=${OUTPUT_DIR}/${BASENAME/.dv/_$w.dv}
-            multiSIR $CPY $w
-            echo ""
-        done
-
-    fi
-
+    for z in ${lnFILE}_Z[1-9]*.dv*;
+    do
+        reconChannels $z
+    done
 
 else
-
-    # SINGLE-CHANNEL FILE
-    echo "testing single wavelength file..."
-    ln -s $RAW_FILE $OUTPUT_DIR/$BASENAME 2>/dev/null
-    multiSIR $OUTPUT_DIR/$BASENAME $WAVES
-
+    reconChannels $lnFILE
 fi
 
