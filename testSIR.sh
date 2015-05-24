@@ -382,7 +382,7 @@ if [ $ZDIV -gt 0 ]; then
 
     makeSubstacks $lnFILE $ZDIV
 
-    for z in ${lnFILE}_Z[1-9]*.dv*;
+    for z in `find . -name "*_Z[1-9]*.dv"`;
     do
         reconChannels $z
     done
