@@ -278,6 +278,7 @@ function show_help {
     echo "   -o   Oil Range    Only use OTFs with oil RI +/- this input value"
     echo "                     (default center is 1.516 if not in file name)"
     echo "   -t   Timepoints   Number of timepoints to include in reconstructions (default 1)"
+    echo "   -r   CropRegion   cropped size of image to analyze (default 256 pixels ... center of image)"
     echo "   -w   Weiner       Wiener filter for reconstructions (default 0.001)"
     echo "   -b   Background   Background for reconstructions (default 80)"
     echo ""
