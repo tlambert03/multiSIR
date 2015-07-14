@@ -2,16 +2,17 @@
 
 ###### CONSTANTS #######
 
-PRIISM_LIB='/usr/local/omx/priism/Priism_setup.sh'
-#PRIISM_LIB='${HOME}/Dropbox/omx/software/priism-4.4.1/Priism_setup.sh'
-OTF_DIR='/data1/OTFs/CORRECTED'
-#OTF_DIR="${HOME}/Dropbox/OMX/CORRECTED"
+#PRIISM_LIB='/usr/local/omx/priism/Priism_setup.sh'
+PRIISM_LIB="${HOME}/Dropbox/OMX/software/priism-4.4.1/Priism_setup.sh"
+#OTF_DIR='/data1/OTFs/CORRECTED'
+OTF_DIR="${HOME}/Dropbox/OMX/CORRECTED"
 SIR_SCRIPT='/home/worx/scripts/sir.sh'
 
 # default values
 OTFAGE=730 # max age of OTF: two years old
 OTFNUM=100 # max number of OTFs to process (for each channel)
 MAXT=1  # default to reconstructing only the single timepoint
+CROP=256
 WIENER=0.0010
 BACKGROUND=80
 OILRANGE=4 # default OTF oil search range
@@ -139,6 +140,10 @@ function numwaves() {
 function numplanes() {
     NZ=`echo | header $1 | grep "(NZ,NW,NT)" | awk -F'   ' '{print $2}'`
     echo "$NZ/($nANGLES * $nPHASES)" | bc
+}
+
+function imsize() {
+    echo "$(echo | header $1 | grep "Image Size" | awk -F' ' '{print $4}')"
 }
 
 
@@ -288,7 +293,7 @@ function show_help {
 
 ###### MAIN PROGRAM #######
 
-while getopts ":hxd:n:f:c:o:l:t:w:z:b:" flag; do
+while getopts ":hxd:n:f:c:o:l:r:t:w:z:b:" flag; do
 case "$flag" in
     h) show_help;;
     x) DRYRUN=1;;
@@ -298,6 +303,7 @@ case "$flag" in
     c) CHANNEL=$OPTARG;; # do specified channel only
     o) OILRANGE=$OPTARG;;
     l) OILCENTER=$OPTARG;;
+    r) CROP=$OPTARG;;
     t) MAXT=$OPTARG;;
     w) WIENER=$OPTARG;;
     z) ZDIV=$OPTARG;;
@@ -348,6 +354,7 @@ NUMWAVES=$(numwaves $RAW_FILE)
 NUMPLANES=$(numplanes $RAW_FILE)
 WAVES=$(waves $RAW_FILE)
 NUMTIMES=$(numtimepoints $RAW_FILE)
+IMSIZE=$(imsize $RAW_FILE)
 
 INPUT_DIR=${RAW_FILE%/*}
 BASENAME=${RAW_FILE##*/}
@@ -370,11 +377,21 @@ oilCheck
 
 # test whether timelapse, if so crop to first timepoint (or MAXT specified by user)
 if [ $NUMTIMES -gt 1 ]; then
-    echo "${NUMTIMES} timepoints... cropping to first $MAXT timepoint(s)"
-    CPY=${lnFILE/.dv/_T1.dv}
+    echo "${NUMTIMES} timepoints... cropping to first $MAXT timepoint(s)..."
+    CPY=${lnFILE/.dv/_T1.dv};
     CopyRegion $lnFILE $CPY -t=1:${MAXT}:1;
     lnFILE=$CPY
 fi
+
+if [ $IMSIZE -gt $CROP ]; then
+    echo "cropping to the center $CROP pixels..."
+    CPY=${lnFILE/.dv/_cropped.dv};
+    CROPSTART=$[($IMSIZE/2)-($CROP/2)];
+    CROPEND=$[$CROPSTART+$CROP-1]
+    CopyRegion $lnFILE $CPY -x=$CROPSTART:$CROPEND -y=$CROPSTART:$CROPEND;
+    lnFILE=$CPY
+fi
+
 
 
 # ZDIV is the number planes in each substack
