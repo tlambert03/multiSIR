@@ -2,10 +2,10 @@
 
 ###### CONSTANTS #######
 
-#PRIISM_LIB='/usr/local/omx/priism/Priism_setup.sh'
-PRIISM_LIB="${HOME}/Dropbox/OMX/software/priism-4.4.1/Priism_setup.sh"
-#OTF_DIR='/data1/OTFs/CORRECTED'
-OTF_DIR="${HOME}/Dropbox/OMX/CORRECTED"
+PRIISM_LIB='/usr/local/omx/priism/Priism_setup.sh'
+#PRIISM_LIB="${HOME}/Dropbox/OMX/software/priism-4.4.1/Priism_setup.sh"
+OTF_DIR='/data1/OTFs/CORRECTED'
+#OTF_DIR="${HOME}/Dropbox/OMX/CORRECTED"
 SIR_SCRIPT='/home/worx/scripts/sir.sh'
 
 # default values
